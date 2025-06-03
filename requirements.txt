@@ -1,0 +1,21 @@
+PyQt6==6.5.0
+PyQt6-WebEngine==6.5.0
+anthropic>=0.40.0
+openai>=1.50.0
+
+# NLP and Analysis
+nltk>=3.8
+textblob>=0.17.0
+scikit-learn>=1.3.0
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+wordcloud>=1.9.0
+
+# Web Server Components
+flask>=2.3.0
+dash>=2.14.0
+plotly>=5.15.0

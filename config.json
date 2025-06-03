@@ -1,0 +1,9 @@
+{
+  "message_limit": 50,
+  "message_delay": 1000,
+  "max_tokens": 200,
+  "provider_ai1": "anthropic",
+  "model_ai1": "claude-3-5-sonnet-20241022",
+  "provider_ai2": "openai",
+  "model_ai2": "gpt-4o"
+}
