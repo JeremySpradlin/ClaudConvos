@@ -41,6 +41,13 @@ except ImportError:
 import anthropic
 import openai
 
+# Import PDF export functionality
+try:
+    from pdf_export import export_conversation_to_pdf, is_pdf_export_available
+    PDF_EXPORT_AVAILABLE = True
+except ImportError:
+    PDF_EXPORT_AVAILABLE = False
+
 
 class ConversationManager(QThread):
     """Manages the conversation between two AI instances."""
@@ -157,26 +164,41 @@ thoughtful, and engaging. Aim for 1-3 sentences unless the topic requires more d
                 model = self.config.get('model_ai2', 'claude-3-5-sonnet-20241022')
                 
             if provider == 'anthropic':
-                return self._get_anthropic_response(message, system_prompt, model)
+                return self._get_anthropic_response(message, system_prompt, model, speaker_id)
             elif provider == 'openai':
-                return self._get_openai_response(message, system_prompt, model)
+                return self._get_openai_response(message, system_prompt, model, speaker_id)
             else:
                 raise Exception(f"Unknown provider: {provider}")
                 
         except Exception as e:
             raise Exception(f"Failed to get AI response: {str(e)}")
             
-    def _get_anthropic_response(self, message: str, system_prompt: str, model: str) -> str:
+    def _get_anthropic_response(self, message: str, system_prompt: str, model: str, speaker_id: str) -> str:
         """Get response from Anthropic API."""
         if not self.anthropic_client:
             raise Exception("Anthropic API key not found in environment")
             
         try:
+            # Build conversation history for context
+            messages = []
+            
+            # Add all previous messages from conversation history
+            for entry in self.conversation_history:
+                if entry['speaker'] == speaker_id:
+                    # This speaker's previous messages are "assistant" role
+                    messages.append({"role": "assistant", "content": entry['message']})
+                else:
+                    # Other speaker's messages are "user" role
+                    messages.append({"role": "user", "content": entry['message']})
+            
+            # Add the current message
+            messages.append({"role": "user", "content": message})
+            
             response = self.anthropic_client.messages.create(
                 model=model,
                 max_tokens=self.config.get('max_tokens', 200),
                 system=system_prompt,
-                messages=[{"role": "user", "content": message}]
+                messages=messages
             )
             return response.content[0].text
         except anthropic.AuthenticationError as e:
@@ -186,19 +208,31 @@ thoughtful, and engaging. Aim for 1-3 sentences unless the topic requires more d
         except anthropic.APIError as e:
             raise Exception(f"Anthropic API error: {str(e)}")
             
-    def _get_openai_response(self, message: str, system_prompt: str, model: str) -> str:
+    def _get_openai_response(self, message: str, system_prompt: str, model: str, speaker_id: str) -> str:
         """Get response from OpenAI API."""
         if not self.openai_client:
             raise Exception("OpenAI API key not found in environment")
             
         try:
+            # Build conversation history for context
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # Add all previous messages from conversation history
+            for entry in self.conversation_history:
+                if entry['speaker'] == speaker_id:
+                    # This speaker's previous messages are "assistant" role
+                    messages.append({"role": "assistant", "content": entry['message']})
+                else:
+                    # Other speaker's messages are "user" role
+                    messages.append({"role": "user", "content": entry['message']})
+            
+            # Add the current message
+            messages.append({"role": "user", "content": message})
+            
             response = self.openai_client.chat.completions.create(
                 model=model,
                 max_tokens=self.config.get('max_tokens', 200),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message}
-                ]
+                messages=messages
             )
             return response.choices[0].message.content
         except openai.AuthenticationError as e:
@@ -488,9 +522,21 @@ The CLI tool provides detailed insights into AI conversation patterns.
         self.stop_button.setEnabled(False)
         controls_layout.addWidget(self.stop_button)
         
-        self.export_button = QPushButton("Export Conversation")
-        self.export_button.clicked.connect(self.export_conversation)
-        controls_layout.addWidget(self.export_button)
+        # Save and Export buttons
+        button_layout = QHBoxLayout()
+        
+        self.save_json_button = QPushButton("Save JSON")
+        self.save_json_button.clicked.connect(self.save_conversation_json)
+        button_layout.addWidget(self.save_json_button)
+        
+        self.export_pdf_button = QPushButton("Export PDF")
+        self.export_pdf_button.clicked.connect(self.export_conversation_pdf)
+        self.export_pdf_button.setEnabled(PDF_EXPORT_AVAILABLE)
+        if not PDF_EXPORT_AVAILABLE:
+            self.export_pdf_button.setToolTip("Install reportlab to enable PDF export")
+        button_layout.addWidget(self.export_pdf_button)
+        
+        controls_layout.addLayout(button_layout)
         
         # Theme toggle
         theme_layout = QHBoxLayout()
@@ -781,14 +827,14 @@ The CLI tool provides detailed insights into AI conversation patterns.
         QMessageBox.critical(self, "Error", error_message)
         self.on_conversation_ended()
         
-    def export_conversation(self):
-        """Export conversation to JSON file."""
+    def save_conversation_json(self):
+        """Save conversation to JSON file."""
         if not self.conversation_history:
-            QMessageBox.information(self, "Info", "No conversation to export")
+            QMessageBox.information(self, "Info", "No conversation to save")
             return
             
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Export Conversation", 
+            self, "Save Conversation as JSON", 
             f"conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             "JSON Files (*.json)"
         )
@@ -812,7 +858,53 @@ The CLI tool provides detailed insights into AI conversation patterns.
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(export_data, f, indent=2, ensure_ascii=False)
                     
-                QMessageBox.information(self, "Success", f"Conversation exported to {filename}")
+                QMessageBox.information(self, "Success", f"Conversation saved to {filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save: {str(e)}")
+    
+    def export_conversation_pdf(self):
+        """Export conversation to PDF file."""
+        if not self.conversation_history:
+            QMessageBox.information(self, "Info", "No conversation to export")
+            return
+            
+        if not PDF_EXPORT_AVAILABLE:
+            QMessageBox.warning(self, "PDF Export Unavailable", 
+                              "PDF export requires the reportlab library.\n"
+                              "Install it with: pip install reportlab")
+            return
+            
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Conversation as PDF", 
+            f"conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            "PDF Files (*.pdf)"
+        )
+        
+        if filename:
+            try:
+                # Prepare conversation data
+                export_data = {
+                    'metadata': {
+                        'export_time': datetime.now().isoformat(),
+                        'message_count': len(self.conversation_history),
+                        'ai1_persona': self.persona_ai1_input.toPlainText(),
+                        'ai2_persona': self.persona_ai2_input.toPlainText(),
+                        'ai1_provider': self.provider_ai1_combo.currentText(),
+                        'ai1_model': self.model_ai1_combo.currentText(),
+                        'ai2_provider': self.provider_ai2_combo.currentText(),
+                        'ai2_model': self.model_ai2_combo.currentText()
+                    },
+                    'conversation': self.conversation_history
+                }
+                
+                # Export to PDF
+                success = export_conversation_to_pdf(export_data, filename)
+                
+                if success:
+                    QMessageBox.information(self, "Success", f"Conversation exported to {filename}")
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to create PDF")
+                    
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
                 

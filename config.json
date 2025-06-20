@@ -1,5 +1,5 @@
 {
-  "message_limit": 50,
+  "message_limit": 20,
   "message_delay": 1000,
   "max_tokens": 200,
   "provider_ai1": "anthropic",

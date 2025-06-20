@@ -128,44 +128,71 @@ thoughtful, and engaging. Aim for 1-3 sentences unless the topic requires more d
                 model = self.config.get('model_ai2', 'claude-3-5-sonnet-20241022')
                 
             if provider == 'anthropic':
-                return self._get_anthropic_response(message, system_prompt, model)
+                return self._get_anthropic_response(message, system_prompt, model, speaker_id)
             elif provider == 'openai':
-                return self._get_openai_response(message, system_prompt, model)
+                return self._get_openai_response(message, system_prompt, model, speaker_id)
             else:
                 raise Exception(f"Unknown provider: {provider}")
                 
         except Exception as e:
             raise Exception(f"Failed to get AI response: {str(e)}")
             
-    def _get_anthropic_response(self, message: str, system_prompt: str, model: str) -> str:
+    def _get_anthropic_response(self, message: str, system_prompt: str, model: str, speaker_id: str) -> str:
         """Get response from Anthropic API."""
         if not self.anthropic_client:
             raise Exception("Anthropic API key not found in environment")
             
         try:
+            # Build conversation history for context
+            messages = []
+            
+            # Add all previous messages from conversation history
+            for entry in self.conversation_history:
+                if entry['speaker'] == speaker_id:
+                    # This speaker's previous messages are "assistant" role
+                    messages.append({"role": "assistant", "content": entry['message']})
+                else:
+                    # Other speaker's messages are "user" role
+                    messages.append({"role": "user", "content": entry['message']})
+            
+            # Add the current message
+            messages.append({"role": "user", "content": message})
+            
             response = self.anthropic_client.messages.create(
                 model=model,
                 max_tokens=self.config.get('max_tokens', 200),
                 system=system_prompt,
-                messages=[{"role": "user", "content": message}]
+                messages=messages
             )
             return response.content[0].text
         except Exception as e:
             raise Exception(f"Anthropic API error: {str(e)}")
             
-    def _get_openai_response(self, message: str, system_prompt: str, model: str) -> str:
+    def _get_openai_response(self, message: str, system_prompt: str, model: str, speaker_id: str) -> str:
         """Get response from OpenAI API."""
         if not self.openai_client:
             raise Exception("OpenAI API key not found in environment")
             
         try:
+            # Build conversation history for context
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # Add all previous messages from conversation history
+            for entry in self.conversation_history:
+                if entry['speaker'] == speaker_id:
+                    # This speaker's previous messages are "assistant" role
+                    messages.append({"role": "assistant", "content": entry['message']})
+                else:
+                    # Other speaker's messages are "user" role
+                    messages.append({"role": "user", "content": entry['message']})
+            
+            # Add the current message
+            messages.append({"role": "user", "content": message})
+            
             response = self.openai_client.chat.completions.create(
                 model=model,
                 max_tokens=self.config.get('max_tokens', 200),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message}
-                ]
+                messages=messages
             )
             return response.choices[0].message.content
         except Exception as e:

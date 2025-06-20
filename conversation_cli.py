@@ -51,21 +51,48 @@ thoughtful, and engaging. Aim for 1-3 sentences unless the topic requires more d
         
         try:
             if self.anthropic_client:
+                # Build conversation history for context
+                messages = []
+                
+                # Add all previous messages from conversation history
+                for entry in self.conversation_history:
+                    if entry['speaker'] == speaker_id:
+                        # This speaker's previous messages are "assistant" role
+                        messages.append({"role": "assistant", "content": entry['message']})
+                    else:
+                        # Other speaker's messages are "user" role
+                        messages.append({"role": "user", "content": entry['message']})
+                
+                # Add the current message
+                messages.append({"role": "user", "content": message})
+                
                 response = self.anthropic_client.messages.create(
                     model='claude-3-5-sonnet-20241022',
                     max_tokens=200,
                     system=system_prompt,
-                    messages=[{"role": "user", "content": message}]
+                    messages=messages
                 )
                 return response.content[0].text
             elif self.openai_client:
+                # Build conversation history for context
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # Add all previous messages from conversation history
+                for entry in self.conversation_history:
+                    if entry['speaker'] == speaker_id:
+                        # This speaker's previous messages are "assistant" role
+                        messages.append({"role": "assistant", "content": entry['message']})
+                    else:
+                        # Other speaker's messages are "user" role
+                        messages.append({"role": "user", "content": entry['message']})
+                
+                # Add the current message
+                messages.append({"role": "user", "content": message})
+                
                 response = self.openai_client.chat.completions.create(
                     model='gpt-4o-mini',
                     max_tokens=200,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": message}
-                    ]
+                    messages=messages
                 )
                 return response.choices[0].message.content
             else:

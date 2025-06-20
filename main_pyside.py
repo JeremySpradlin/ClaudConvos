@@ -136,21 +136,36 @@ thoughtful, and engaging. Aim for 1-3 sentences unless the topic requires more d
         try:
             # For simplicity, use Anthropic by default
             if self.anthropic_client:
-                return self._get_anthropic_response(message, system_prompt)
+                return self._get_anthropic_response(message, system_prompt, speaker_id)
             else:
                 return f"Mock response from {speaker_id}: {message[:50]}... (No API available)"
                 
         except Exception as e:
             raise Exception(f"Failed to get AI response: {str(e)}")
             
-    def _get_anthropic_response(self, message: str, system_prompt: str) -> str:
+    def _get_anthropic_response(self, message: str, system_prompt: str, speaker_id: str) -> str:
         """Get response from Anthropic API."""
         try:
+            # Build conversation history for context
+            messages = []
+            
+            # Add all previous messages from conversation history
+            for entry in self.conversation_history:
+                if entry['speaker'] == speaker_id:
+                    # This speaker's previous messages are "assistant" role
+                    messages.append({"role": "assistant", "content": entry['message']})
+                else:
+                    # Other speaker's messages are "user" role
+                    messages.append({"role": "user", "content": entry['message']})
+            
+            # Add the current message
+            messages.append({"role": "user", "content": message})
+            
             response = self.anthropic_client.messages.create(
                 model='claude-3-5-sonnet-20241022',
                 max_tokens=self.config.get('max_tokens', 200),
                 system=system_prompt,
-                messages=[{"role": "user", "content": message}]
+                messages=messages
             )
             return response.content[0].text
         except Exception as e:
